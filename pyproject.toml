@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yolo-seg-rdkx5"
+version = "0.1.0"
+description = "Minimal YOLO segmentation training, ONNX export, and RDK X5 PTQ workflow."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "ultralytics",
+  "torch",
+  "onnx",
+]
+
+[project.scripts]
+yolo-seg-train = "yolo_seg.train:main"
+yolo-seg-export-rdk-onnx = "yolo_seg.export_rdk_onnx:main"
+yolo-seg-quantize-rdk-x5 = "yolo_seg.quantize_rdk_x5:main"
+
+[tool.setuptools]
+packages = ["yolo_seg"]
