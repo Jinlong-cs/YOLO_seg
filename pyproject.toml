@@ -12,6 +12,9 @@ dependencies = [
   "ultralytics",
   "torch",
   "onnx",
+  "numpy",
+  "opencv-python-headless",
+  "PyYAML",
 ]
 
 [project.scripts]

@@ -6,6 +6,8 @@ It is intentionally small and only keeps the parts that are useful for training 
 
 - train a YOLO segmentation model
 - export an RDK X5 friendly ONNX
+- generate calibration tensors
+- generate and save `config.yaml`
 - run PTQ quantization and compile a `.bin` model in Docker
 
 It does **not** include:
@@ -103,8 +105,7 @@ For PTQ you also need:
 
 - Docker
 - an RDK X5 OpenExplore image
-- a Horizon mapper script, for example:
-  `rdk_model_zoo/samples/vision/ultralytics_yolo/x86/mapper.py`
+- `hb_mapper` available inside that image
 
 ## CLI Entry Points
 
@@ -191,16 +192,45 @@ Example:
 python YOLO_seg/scripts/quantize_rdk_x5.py \
   --workspace . \
   --onnx data_loop/runs/segment/runs/seg/full_dataset/weights/best_352x640.onnx \
-  --cal-images data_loop/data_full_labeled \
+  --data-yaml data_loop/dataset_full/data.yaml \
+  --cal-split train \
   --output-dir data_loop/artifacts/rdk_x5_352x640 \
-  --mapper-script data_loop/rdk_model_zoo/samples/vision/ultralytics_yolo/x86/mapper.py
+  --preprocess letterbox
 ```
 
 This is important because:
 
 - the quantization script mounts `--workspace` into Docker as `/workspace`
-- all paths passed to the mapper must stay under that mounted root
+- all paths used by ONNX, config, and calibration data must stay under that mounted root
 - in this workspace, the data-loop side now lives under `data_loop/`
+
+The quantization step now does these jobs internally:
+
+- read input shape from the ONNX model
+- collect calibration images from either:
+  - `--cal-images`, or
+  - `--data-yaml` + `--cal-split`
+- preprocess calibration tensors
+- save a managed `config.yaml`
+- invoke `hb_mapper` inside Docker
+
+Generated outputs inside `--output-dir`:
+
+- compiled `.bin`
+- `config.yaml`
+- `calibration_sources.txt`
+- `hb_mapper_makertbin.log`
+
+If you want to keep intermediate calibration tensors and the temporary workspace:
+
+```bash
+python YOLO_seg/scripts/quantize_rdk_x5.py \
+  --workspace . \
+  --onnx data_loop/runs/segment/runs/seg/full_dataset/weights/best_352x640.onnx \
+  --data-yaml data_loop/dataset_full/data.yaml \
+  --output-dir data_loop/artifacts/rdk_x5_352x640 \
+  --keep-workspace
+```
 
 ## Usage After Standalone Extraction
 
@@ -257,7 +287,10 @@ Responsible for:
 
 Responsible for:
 
-- launching the Horizon mapper inside Docker
+- collecting calibration source images
+- generating calibration tensors
+- writing `config.yaml`
+- launching `hb_mapper` inside Docker
 - mounting a chosen workspace root
 - converting user paths to paths valid inside the Docker workspace
 
@@ -266,7 +299,7 @@ Responsible for:
 - dataset conversion is still outside this directory
 - stage reporting is still outside this directory
 - runtime validation on x86 / board is still outside this directory
-- PTQ still depends on an external mapper script path
+- PTQ assumes `hb_mapper` is available in the selected Docker image
 
 These are fine for now. The current goal is to isolate the model lifecycle first.
 
@@ -276,7 +309,6 @@ When this becomes a standalone repo, the next reasonable moves are:
 
 - move stage reporting into `YOLO_seg`
 - decide whether dataset conversion should also move in
-- decide whether to vendor the required mapper helper or keep it external
 - add a small `examples/` folder with one full train-export-quantize workflow
 
 ## Summary
