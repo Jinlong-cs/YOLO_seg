@@ -140,8 +140,8 @@ Typical current usage from the workspace root:
 
 ```bash
 python YOLO_seg/scripts/train_yolo_seg.py \
-  --data dataset_full/data.yaml \
-  --model yolo11n-seg.pt \
+  --data data_loop/dataset_full/data.yaml \
+  --model data_loop/yolo11n-seg.pt \
   --epochs 150 \
   --imgsz 640 \
   --batch 8 \
@@ -155,26 +155,30 @@ Default outputs follow Ultralytics behavior, for example:
 - `runs/seg/<run_name>/weights/best.pt`
 - `runs/seg/<run_name>/weights/last.pt`
 
+In the current workspace these are typically under:
+
+- `data_loop/runs/...`
+
 ### 2. Export ONNX For RDK X5
 
 Square input:
 
 ```bash
 python YOLO_seg/scripts/export_rdk_onnx.py \
-  --pt runs/segment/runs/seg/full_dataset/weights/best.pt \
+  --pt data_loop/runs/segment/runs/seg/full_dataset/weights/best.pt \
   --opset 11 \
   --imgsz 640 \
-  --output runs/segment/runs/seg/full_dataset/weights/best_640x640.onnx
+  --output data_loop/runs/segment/runs/seg/full_dataset/weights/best_640x640.onnx
 ```
 
 Native rectangular input:
 
 ```bash
 python YOLO_seg/scripts/export_rdk_onnx.py \
-  --pt runs/segment/runs/seg/full_dataset/weights/best.pt \
+  --pt data_loop/runs/segment/runs/seg/full_dataset/weights/best.pt \
   --opset 11 \
   --imgsz 352 640 \
-  --output runs/segment/runs/seg/full_dataset/weights/best_352x640.onnx
+  --output data_loop/runs/segment/runs/seg/full_dataset/weights/best_352x640.onnx
 ```
 
 ### 3. PTQ Quantization + Compile
@@ -186,16 +190,17 @@ Example:
 ```bash
 python YOLO_seg/scripts/quantize_rdk_x5.py \
   --workspace . \
-  --onnx runs/segment/runs/seg/full_dataset/weights/best_352x640.onnx \
-  --cal-images data_full_labeled \
-  --output-dir artifacts/rdk_x5_352x640 \
-  --mapper-script rdk_model_zoo/samples/vision/ultralytics_yolo/x86/mapper.py
+  --onnx data_loop/runs/segment/runs/seg/full_dataset/weights/best_352x640.onnx \
+  --cal-images data_loop/data_full_labeled \
+  --output-dir data_loop/artifacts/rdk_x5_352x640 \
+  --mapper-script data_loop/rdk_model_zoo/samples/vision/ultralytics_yolo/x86/mapper.py
 ```
 
 This is important because:
 
 - the quantization script mounts `--workspace` into Docker as `/workspace`
 - all paths passed to the mapper must stay under that mounted root
+- in this workspace, the data-loop side now lives under `data_loop/`
 
 ## Usage After Standalone Extraction
 
