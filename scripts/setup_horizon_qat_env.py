@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from yolo_seg.horizon_env import DEFAULT_OPEN_EXPLORER_ROOT, locate_horizon_wheels
+from yolo_seg.horizon_env import DEFAULT_OPEN_EXPLORER_ROOT, locate_hbdk_runtime_paths, locate_horizon_wheels
 
 
 def build_parser():
@@ -85,11 +85,24 @@ def build_commands(args):
     return commands
 
 
+def print_env_exports(args):
+    vp = venv_python(args.venv_path)
+    try:
+        runtime_paths = locate_hbdk_runtime_paths(vp)
+    except Exception:
+        return
+    print("")
+    print("# Optional shell exports for hbdk CLI tools")
+    print(f"export PATH=\"{runtime_paths['bin']}:$PATH\"")
+    print(f"export LD_LIBRARY_PATH=\"{runtime_paths['lib64']}:$LD_LIBRARY_PATH\"")
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     commands = build_commands(args)
     for command in commands:
         print(" ".join(command))
+    print_env_exports(args)
     if args.execute:
         for command in commands:
             subprocess.run(command, check=True)

@@ -34,3 +34,34 @@ def locate_horizon_wheels(open_explorer_root=None):
         "horizon_plugin_profiler": find_single_wheel(wheel_dir, "horizon_plugin_profiler-*.whl"),
         "hbdk_model_verifier": find_single_wheel(wheel_dir, "hbdk_model_verifier-*.whl"),
     }
+
+
+def locate_hbdk_runtime_paths(python_executable):
+    try:
+        import hbdk
+
+        root = Path(hbdk.__file__).resolve().parent
+        lines = [str(root / "bin"), str(root / "lib64")]
+    except Exception:
+        import subprocess
+
+        python_executable = str(Path(python_executable).resolve())
+        code = (
+            "from pathlib import Path; import hbdk; "
+            "root = Path(hbdk.__file__).resolve().parent; "
+            "print(root / 'bin'); "
+            "print(root / 'lib64')"
+        )
+        result = subprocess.run(
+            [python_executable, "-c", code],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if len(lines) < 2:
+        raise SystemExit("Failed to resolve hbdk runtime paths")
+    return {
+        "bin": Path(lines[0]),
+        "lib64": Path(lines[1]),
+    }

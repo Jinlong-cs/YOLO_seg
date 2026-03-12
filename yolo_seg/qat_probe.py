@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import traceback
 import types
 from pathlib import Path
@@ -29,7 +31,9 @@ class HorizonQATReadyYOLOSeg(nn.Module):
 
 
 def c2f_forward_traceable(self, x):
-    y0, y1 = self.cv1(x).chunk(2, 1)
+    y = self.cv1(x)
+    y0 = y[:, : self.c, :, :]
+    y1 = y[:, self.c :, :, :]
     outputs = [y0, y1]
     last = y1
     for module in self.m:
@@ -73,15 +77,67 @@ def concat_forward_qat(self, x):
 
 
 def attention_forward_qat(self, x):
-    x = self.dequant_qat(x)
-    x = attention_forward(self, x)
-    return self.quant_qat(x)
+    qkv_q = self.qkv(x)
+    qkv = self.dequant_qat(qkv_q)
+
+    b, c, h, w = qkv.shape
+    n = h * w
+    q, k, v = qkv.view(b, self.num_heads, self.key_dim * 2 + self.head_dim, n).split(
+        [self.key_dim, self.key_dim, self.head_dim], dim=2
+    )
+    attn = (q.transpose(-2, -1) @ k) * self.scale
+    attn = attn.permute(0, 3, 1, 2).contiguous()
+    max_attn = attn.max(dim=1, keepdim=True).values
+    exp_attn = torch.exp(attn - max_attn)
+    attn = exp_attn / exp_attn.sum(dim=1, keepdim=True)
+    attn = attn.permute(0, 2, 3, 1).contiguous()
+
+    x_float = (v @ attn.transpose(-2, -1)).view(b, self.num_heads * self.head_dim, h, w)
+    v_float = v.reshape(b, self.num_heads * self.head_dim, h, w)
+
+    pe_out = self.dequant_qat(self.pe(self.quant_qat(v_float)))
+    x_float = x_float + pe_out
+    return self.proj(self.quant_qat(x_float))
 
 
 def aattn_forward_qat(self, x):
-    x = self.dequant_qat(x)
-    x = aattn_forward(self, x)
-    return self.quant_qat(x)
+    qkv_q = self.qkv(x)
+    qkv = self.dequant_qat(qkv_q)
+
+    b, c, h, w = qkv.shape
+    n = h * w
+    qkv = qkv.flatten(2).transpose(1, 2)
+    if self.area > 1:
+        qkv = qkv.reshape(b * self.area, n // self.area, c)
+        b, n, _ = qkv.shape
+
+    q, k, v = (
+        qkv.view(b, n, self.num_heads, self.head_dim * 3)
+        .permute(0, 2, 3, 1)
+        .split([self.head_dim, self.head_dim, self.head_dim], dim=2)
+    )
+    attn = (q.transpose(-2, -1) @ k) * (self.head_dim**-0.5)
+    attn = attn.permute(0, 3, 1, 2).contiguous()
+    max_attn = attn.max(dim=1, keepdim=True).values
+    exp_attn = torch.exp(attn - max_attn)
+    attn = exp_attn / exp_attn.sum(dim=1, keepdim=True)
+    attn = attn.permute(0, 2, 3, 1).contiguous()
+
+    x_float = v @ attn.transpose(-2, -1)
+    x_float = x_float.permute(0, 3, 1, 2)
+    v_float = v.permute(0, 3, 1, 2)
+
+    if self.area > 1:
+        x_float = x_float.reshape(b // self.area, n * self.area, c)
+        v_float = v_float.reshape(b // self.area, n * self.area, c)
+        b, n, _ = x_float.shape
+
+    x_float = x_float.reshape(b, h, w, c).permute(0, 3, 1, 2).contiguous()
+    v_float = v_float.reshape(b, h, w, c).permute(0, 3, 1, 2).contiguous()
+
+    pe_out = self.dequant_qat(self.pe(self.quant_qat(v_float)))
+    x_float = x_float + pe_out
+    return self.proj(self.quant_qat(x_float))
 
 
 def patch_model_for_qat_trace(model):
@@ -211,6 +267,7 @@ def run_qat_probe(pt_path, imgsz, output_dir, march="BAYES_E", device="cpu", inp
         perf_model,
         visualize_model,
     )
+    from yolo_seg.horizon_env import locate_hbdk_runtime_paths
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -228,12 +285,15 @@ def run_qat_probe(pt_path, imgsz, output_dir, march="BAYES_E", device="cpu", inp
     try:
         torch_device = torch.device(device)
         set_march(march_from_name(march, March))
+        runtime_paths = locate_hbdk_runtime_paths(Path(sys.executable))
+        os.environ["PATH"] = f"{runtime_paths['bin']}:{os.environ.get('PATH', '')}"
+        os.environ["LD_LIBRARY_PATH"] = f"{runtime_paths['lib64']}:{os.environ.get('LD_LIBRARY_PATH', '')}"
 
         yolo = YOLO(pt_path)
         patch_model_for_rdk(yolo.model.model)
         patch_model_for_qat_trace(yolo.model.model)
         patch_model_for_qat_eager(yolo.model.model)
-        core_model = yolo.model.model
+        core_model = yolo.model
         example_input = build_example_input(imgsz, torch_device)
 
         fx_error = None
