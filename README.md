@@ -311,6 +311,38 @@ When this becomes a standalone repo, the next reasonable moves are:
 - decide whether dataset conversion should also move in
 - add a small `examples/` folder with one full train-export-quantize workflow
 
+## Experimental X5 Compare Workflow
+
+An experimental automation branch can manage a float / PTQ / QAT comparison workflow for RDK X5.
+
+Main files:
+
+- `configs/x5_compare/default.yaml`
+- `scripts/run_x5_compare.py`
+- `scripts/setup_horizon_qat_env.py`
+- `scripts/qat_probe_yolo.py`
+
+Typical usage:
+
+```bash
+python YOLO_seg/scripts/run_x5_compare.py --stage manifest
+python YOLO_seg/scripts/setup_horizon_qat_env.py
+```
+
+The comparison manifest writes:
+
+- `YOLO_seg/experiments/x5_compare/manifest.json`
+- `YOLO_seg/experiments/x5_compare/run_stages.sh`
+
+Current scope of this automation:
+
+- float training command generation
+- PTQ export/compile command generation
+- Horizon QAT environment bootstrap command generation
+- QAT graph/compile probe for the current YOLO-seg model
+
+This is the experiment automation layer. It is intentionally separated from the stable training / export / PTQ entry points.
+
 ## Summary
 
 `YOLO_seg` is the clean model workflow boundary:

@@ -1,0 +1,50 @@
+experiment:
+  name: x5_float_ptq_qat_compare
+  output_root: YOLO_seg/experiments/x5_compare
+
+workspace:
+  root: /home/supernova/wujinlong/labelme-with-segment-anything
+  yolo_seg_root: /home/supernova/wujinlong/labelme-with-segment-anything/YOLO_seg
+
+dataset:
+  data_yaml: data_loop/dataset_full/data.yaml
+  train_split: train
+  val_split: val
+
+model:
+  base_checkpoint: data_loop/yolo11n-seg.pt
+  float_best_pt: data_loop/runs/segment/runs/seg/full_dataset/weights/best.pt
+
+float:
+  epochs: 150
+  imgsz: 640
+  batch: 8
+  device: "0"
+  workers: 8
+  patience: 50
+  project: data_loop/runs/seg_compare
+  name: float_baseline
+
+ptq:
+  export_imgsz: [352, 640]
+  cal_source: data_yaml
+  cal_split: train
+  cal_sample_num: 50
+  cal_seed: 42
+  preprocess: letterbox
+  output_dir: data_loop/artifacts/rdk_x5_ptq_compare
+  docker_image: registry.d-robotics.cc/deliver/hub.hobot.cc/aitools/ai_toolchain_ubuntu_20_x5_cpu:v1.2.8
+  quantized: int8
+  jobs: 8
+  optimize_level: O3
+
+qat:
+  enabled: true
+  open_explorer_root: /home/supernova/wujinlong/RDK_X5_tools/horizon_x5_open_explorer_v1.2.8-py310_20240926
+  venv_path: .venv.horizon_qat
+  march: BAYES_E
+  probe_imgsz: [352, 640]
+  device: cpu
+  input_source: ddr
+  compile_opt: 0
+  output_dir: YOLO_seg/experiments/x5_compare/qat_probe
