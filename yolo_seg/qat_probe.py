@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import traceback
+import types
 from pathlib import Path
 
 import torch
@@ -25,6 +26,36 @@ class HorizonQATReadyYOLOSeg(nn.Module):
         if isinstance(outputs, list):
             return [self.dequant(out) for out in outputs]
         return self.dequant(outputs)
+
+
+def c2f_forward_traceable(self, x):
+    y0, y1 = self.cv1(x).chunk(2, 1)
+    outputs = [y0, y1]
+    last = y1
+    for module in self.m:
+        last = module(last)
+        outputs.append(last)
+    return self.cv2(torch.cat(outputs, 1))
+
+
+def sppf_forward_traceable(self, x):
+    y0 = self.cv1(x)
+    y1 = self.m(y0)
+    y2 = self.m(y1)
+    y3 = self.m(y2)
+    y = self.cv2(torch.cat((y0, y1, y2, y3), 1))
+    return y + x if getattr(self, "add", False) else y
+
+
+def patch_model_for_qat_trace(model):
+    from ultralytics.nn.modules.block import C2f, C3k2, SPPF
+
+    for child in model.children():
+        if isinstance(child, (C2f, C3k2)):
+            child.forward = types.MethodType(c2f_forward_traceable, child)
+        elif isinstance(child, SPPF):
+            child.forward = types.MethodType(sppf_forward_traceable, child)
+        patch_model_for_qat_trace(child)
 
 
 def march_from_name(name, march_enum):
@@ -74,6 +105,7 @@ def run_qat_probe(pt_path, imgsz, output_dir, march="BAYES_E", device="cpu", inp
 
         yolo = YOLO(pt_path)
         patch_model_for_rdk(yolo.model.model)
+        patch_model_for_qat_trace(yolo.model.model)
         core_model = yolo.model.model
         wrapped = HorizonQATReadyYOLOSeg(core_model, QuantStub, DeQuantStub).to(torch_device).eval()
 

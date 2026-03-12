@@ -22,6 +22,7 @@ def build_parser():
     parser.add_argument("--torch-version", default="1.13.0", help="Torch version expected by the Horizon plugin wheel.")
     parser.add_argument("--torchvision-version", default="0.14.0", help="Torchvision version expected by the Horizon plugin wheel.")
     parser.add_argument("--extra-index-url", default="https://download.pytorch.org/whl/cu116", help="Extra index used for torch/torchvision installation.")
+    parser.add_argument("--with-tc-ui", action="store_true", help="Also install horizon_tc_ui and its dependency chain.")
     parser.add_argument("--execute", action="store_true", help="Actually create the venv and install packages.")
     return parser
 
@@ -33,8 +34,13 @@ def venv_python(venv_path):
 def build_commands(args):
     wheels = locate_horizon_wheels(args.open_explorer_root)
     vp = venv_python(args.venv_path)
+    create_venv = (
+        f"if ! {args.python} -m venv {args.venv_path}; then "
+        f"{args.python} -m virtualenv --clear {args.venv_path}; "
+        f"fi"
+    )
     commands = [
-        [args.python, "-m", "venv", args.venv_path],
+        ["bash", "-lc", create_venv],
         [str(vp), "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
         [
             str(vp),
@@ -53,18 +59,29 @@ def build_commands(args):
             "pip",
             "install",
             str(wheels["horizon_plugin_pytorch"]),
-            str(wheels["horizon_tc_ui"]),
             str(wheels["hbdk"]),
             str(wheels["horizon_nn"]),
             str(wheels["horizon_plugin_profiler"]),
             str(wheels["hbdk_model_verifier"]),
         ],
-        [
+        [str(vp), "-c", "import horizon_plugin_pytorch, hbdk, horizon_nn; print('QAT environment ready')"],
+    ]
+    if args.with_tc_ui:
+        commands.insert(
+            -1,
+            [
+                str(vp),
+                "-m",
+                "pip",
+                "install",
+                str(wheels["horizon_tc_ui"]),
+            ],
+        )
+        commands[-1] = [
             str(vp),
             "-c",
-            "import horizon_plugin_pytorch, horizon_tc_ui, hbdk; print('QAT environment ready')",
-        ],
-    ]
+            "import horizon_plugin_pytorch, horizon_tc_ui, hbdk, horizon_nn; print('QAT environment ready')",
+        ]
     return commands
 
 

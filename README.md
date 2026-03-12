@@ -341,6 +341,15 @@ Current scope of this automation:
 - Horizon QAT environment bootstrap command generation
 - QAT graph/compile probe for the current YOLO-seg model
 
+Notes:
+
+- `setup_horizon_qat_env.py` installs the minimum QAT stack by default:
+  - `horizon_plugin_pytorch`
+  - `hbdk`
+  - `horizon_nn`
+- `horizon_tc_ui` is optional and can be added later with `--with-tc-ui`
+- the current probe is designed to surface real FX/QAT graph compatibility issues early, before a full overnight experiment is launched
+
 This is the experiment automation layer. It is intentionally separated from the stable training / export / PTQ entry points.
 
 ## Summary
